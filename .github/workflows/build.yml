@@ -1,0 +1,70 @@
+name: Build Flutter APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip_url:
+        description: 'URL file ZIP dari GitHub Release'
+        required: true
+      tag:
+        description: 'Tag build (unik)'
+        required: true
+      build_type:
+        description: 'debug atau release'
+        required: true
+        default: 'release'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+          channel: 'stable'
+
+      - name: Download ZIP Project
+        run: |
+          echo "Downloading project from ${{ github.event.inputs.zip_url }}"
+          wget -q "${{ github.event.inputs.zip_url }}" -O project.zip
+
+      - name: Extract ZIP
+        run: |
+          mkdir project
+          unzip -q project.zip -d project
+
+      - name: Fix Pubspec
+        run: |
+          if [ ! -f project/pubspec.yaml ]; then
+            INNER_DIR=$(find project -name pubspec.yaml -printf '%h\n' | head -n 1)
+            if [ -n "$INNER_DIR" ]; then
+              mv "$INNER_DIR"/* project/
+              mv "$INNER_DIR"/.[!.]* project/ 2>/dev/null || true
+            fi
+          fi
+
+      - name: Get Flutter Dependencies
+        run: |
+          cd project
+          flutter pub get
+
+      - name: Build APK
+        run: |
+          cd project
+          flutter build apk --${{ github.event.inputs.build_type }}
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ github.event.inputs.build_type }}
+          path: project/build/app/outputs/flutter-apk/*.apk
